@@ -1,0 +1,40 @@
+name: iOS build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository with Git LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install build tools
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel cython kivy-ios
+
+      - name: Build Kivy iOS project
+        run: |
+          chmod +x build_ios.sh
+          ./build_ios.sh
+
+      - name: Show generated Xcode project
+        run: |
+          find . -maxdepth 6 -name '*.xcodeproj' -print
+
+      - name: Package generated Xcode project
+        run: |
+          mkdir -p artifacts
+          tar -czf artifacts/gta6_ios_xcode_project.tar.gz build 2>/dev/null || true
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gta6-ios-xcode-project
+          path: artifacts/gta6_ios_xcode_project.tar.gz
+          if-no-files-found: warn
