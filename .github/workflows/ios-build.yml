@@ -44,31 +44,75 @@ jobs:
           chmod +x build_ios.sh
           ./build_ios.sh 2>&1 | tee ios-build.log
 
-      - name: Show generated Xcode project
-        if: success()
+      - name: Verify generated project contains the app source
+        shell: bash
         run: |
-          set -e
-          find . -maxdepth 3 -name '*.xcodeproj' -print
-          find . -maxdepth 2 -type d -name '*-ios' -print
-
-      - name: Package generated Xcode project
-        if: success()
-        run: |
-          set -e
-          mkdir -p artifacts
+          set -euo pipefail
           PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
           if [ -z "$PROJECT_DIR" ]; then
             echo 'No generated *-ios project directory found.'
             exit 1
           fi
-          tar -czf artifacts/gta6_ios_xcode_project.tar.gz "$PROJECT_DIR" dist
+          test -f main.py
+          test -f main_ios.py
+          test -d assets
+          test -f "$PROJECT_DIR/gta6_iphone.xcodeproj/project.pbxproj"
+          echo "Project: $PROJECT_DIR"
+          echo 'Source files and Xcode project are present.'
+
+      - name: Build unsigned iOS device app with Xcode
+        shell: bash
+        run: |
+          set -o pipefail
+          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
+          PROJECT_FILE="$(find "$PROJECT_DIR" -maxdepth 1 -name '*.xcodeproj' -print -quit)"
+          if [ -z "$PROJECT_FILE" ]; then
+            echo 'No generated Xcode project found.'
+            exit 1
+          fi
+          rm -rf xcode-build
+          xcodebuild \
+            -project "$PROJECT_FILE" \
+            -configuration Debug \
+            -sdk iphoneos \
+            -derivedDataPath xcode-build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build 2>&1 | tee xcode-build.log
+
+      - name: Verify built app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find xcode-build -type d -name '*.app' -path '*Debug-iphoneos*' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo 'Xcode reported success but no iphoneos .app bundle was produced.'
+            exit 1
+          fi
+          test -f "$APP_PATH/Info.plist"
+          test -f "$APP_PATH/main.pyc"
+          echo "Built app: $APP_PATH"
+          du -sh "$APP_PATH"
+
+      - name: Package generated Xcode project and unsigned app
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
+          APP_PATH="$(find xcode-build -type d -name '*.app' -path '*Debug-iphoneos*' -print -quit)"
+          if [ -z "$PROJECT_DIR" ] || [ -z "$APP_PATH" ]; then
+            echo 'Required build outputs are missing.'
+            exit 1
+          fi
+          tar -czf artifacts/gta6_ios_build.tar.gz "$PROJECT_DIR" dist xcode-build
 
       - name: Upload build artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: gta6-ios-xcode-project
-          path: artifacts/gta6_ios_xcode_project.tar.gz
+          name: gta6-ios-build
+          path: artifacts/gta6_ios_build.tar.gz
           if-no-files-found: error
 
       - name: Print useful failure diagnostics
@@ -80,5 +124,7 @@ jobs:
           python --version || true
           echo '===== TOOLCHAIN ====='
           .venv/bin/toolchain recipes --compact 2>&1 || true
-          echo '===== LAST 200 BUILD LOG LINES ====='
+          echo '===== KIVY BUILD LOG (LAST 200) ====='
           tail -n 200 ios-build.log 2>/dev/null || true
+          echo '===== XCODE BUILD LOG (LAST 250) ====='
+          tail -n 250 xcode-build.log 2>/dev/null || true
