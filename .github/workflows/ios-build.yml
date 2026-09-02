@@ -72,17 +72,20 @@ jobs:
           set -o pipefail
           PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
           PROJECT_FILE="$PROJECT_DIR/gta6_iphone.xcodeproj"
-          rm -rf xcode-build
-          mkdir -p xcode-build
+          BUILD_OUTPUT_DIR="$RUNNER_TEMP/gta6-xcode-build"
+          rm -rf "$BUILD_OUTPUT_DIR" xcode-build
+          mkdir -p "$BUILD_OUTPUT_DIR"
           xcodebuild \
             -project "$PROJECT_FILE" \
             -target gta6_iphone \
             -configuration Debug \
             -sdk iphoneos \
-            CONFIGURATION_BUILD_DIR="$PWD/xcode-build" \
+            CONFIGURATION_BUILD_DIR="$BUILD_OUTPUT_DIR" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee xcode-build.log
+          cp -R "$BUILD_OUTPUT_DIR" ./xcode-build
+          echo "Xcode output copied to $PWD/xcode-build"
 
       - name: Verify built app bundle
         shell: bash
