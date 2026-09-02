@@ -22,7 +22,7 @@ jobs:
 
       - name: Show build environment
         run: |
-          set -e
+          set -euo pipefail
           sw_vers
           xcodebuild -version
           xcode-select -p
@@ -31,7 +31,7 @@ jobs:
 
       - name: Install macOS build dependencies
         run: |
-          brew update
+          set -euo pipefail
           brew install autoconf automake libtool pkg-config
           brew link libtool --overwrite
 
@@ -58,46 +58,12 @@ jobs:
           echo "Project: $PROJECT_DIR"
           echo 'Source files and Xcode project are present.'
 
-      - name: Create shared Xcode scheme
+      - name: Inspect Xcode project targets
         shell: bash
         run: |
           set -euo pipefail
           PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
           PROJECT_FILE="$PROJECT_DIR/gta6_iphone.xcodeproj"
-          PBX_FILE="$PROJECT_FILE/project.pbxproj"
-          TARGET_ID="$(grep -E '^[[:space:]]*[A-Fa-f0-9]+ /\\* gta6_iphone \\*/ = \\{' "$PBX_FILE" | sed -E 's/^[[:space:]]*([A-Fa-f0-9]+).*/\\1/' | head -n 1)"
-          if [ -z "$TARGET_ID" ]; then
-            echo 'Could not find the gta6_iphone native target in project.pbxproj.'
-            exit 1
-          fi
-          SCHEME_DIR="$PROJECT_FILE/xcshareddata/xcschemes"
-          mkdir -p "$SCHEME_DIR"
-          cat > "$SCHEME_DIR/gta6_iphone.xcscheme" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<Scheme LastUpgradeVersion="1600" version="1.3">
-  <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES">
-    <BuildActionEntries>
-      <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
-        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="$TARGET_ID" BuildableName="gta6_iphone.app" BlueprintName="gta6_iphone" ReferencedContainer="container:gta6_iphone.xcodeproj"/>
-      </BuildActionEntry>
-    </BuildActionEntries>
-  </BuildAction>
-  <TestAction buildConfiguration="Debug" shouldUseLaunchSchemeArgsEnv="YES"/>
-  <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="YES">
-    <BuildableProductRunnable runnableDebuggingMode="0">
-      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="$TARGET_ID" BuildableName="gta6_iphone.app" BlueprintName="gta6_iphone" ReferencedContainer="container:gta6_iphone.xcodeproj"/>
-    </BuildableProductRunnable>
-  </LaunchAction>
-  <ProfileAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES" savedToolIdentifier="" useCustomWorkingDirectory="NO" debugDocumentVersioning="YES">
-    <BuildableProductRunnable runnableDebuggingMode="0">
-      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="$TARGET_ID" BuildableName="gta6_iphone.app" BlueprintName="gta6_iphone" ReferencedContainer="container:gta6_iphone.xcodeproj"/>
-    </BuildableProductRunnable>
-  </ProfileAction>
-  <AnalyzeAction buildConfiguration="Debug"/>
-  <ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
-</Scheme>
-EOF
-          echo "Created shared scheme for target $TARGET_ID"
           xcodebuild -list -project "$PROJECT_FILE"
 
       - name: Build unsigned iOS device app with Xcode
@@ -107,12 +73,13 @@ EOF
           PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
           PROJECT_FILE="$PROJECT_DIR/gta6_iphone.xcodeproj"
           rm -rf xcode-build
+          mkdir -p xcode-build
           xcodebuild \
             -project "$PROJECT_FILE" \
-            -scheme gta6_iphone \
+            -target gta6_iphone \
             -configuration Debug \
             -sdk iphoneos \
-            -derivedDataPath xcode-build \
+            CONFIGURATION_BUILD_DIR="$PWD/xcode-build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee xcode-build.log
@@ -121,16 +88,17 @@ EOF
         shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="$(find xcode-build -type d -name '*.app' -path '*Debug-iphoneos*' -print -quit)"
+          APP_PATH="$(find xcode-build -type d -name '*.app' -print -quit)"
           if [ -z "$APP_PATH" ]; then
-            echo 'Xcode reported success but no iphoneos .app bundle was produced.'
+            echo 'Xcode reported success but no .app bundle was produced.'
+            find xcode-build -maxdepth 4 -print || true
             exit 1
           fi
           test -f "$APP_PATH/Info.plist"
           MAIN_PYC="$(find "$APP_PATH" -type f -name 'main.pyc' -print -quit)"
           if [ -z "$MAIN_PYC" ]; then
             echo 'Built app is missing main.pyc.'
-            find "$APP_PATH" -maxdepth 3 -type f | head -n 100
+            find "$APP_PATH" -maxdepth 4 -type f | head -n 150
             exit 1
           fi
           echo "Built app: $APP_PATH"
@@ -139,11 +107,12 @@ EOF
 
       - name: Package generated Xcode project and unsigned app
         if: success()
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
           PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
-          APP_PATH="$(find xcode-build -type d -name '*.app' -path '*Debug-iphoneos*' -print -quit)"
+          APP_PATH="$(find xcode-build -type d -name '*.app' -print -quit)"
           if [ -z "$PROJECT_DIR" ] || [ -z "$APP_PATH" ]; then
             echo 'Required build outputs are missing.'
             exit 1
