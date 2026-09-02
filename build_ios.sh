@@ -21,6 +21,15 @@ toolchain build python3 kivy ffpyplayer
 # The current toolchain create command accepts only NAME and DIRECTORY;
 # --alias is not a valid create option.
 rm -rf gta6_ios-ios
-rm -rf GTA6_iPhone-ios
+auto_project_dir="gta6_iphone-ios"
+rm -rf "$auto_project_dir"
 toolchain create GTA6_iPhone "$PWD"
-printf '\nXcode project created successfully.\n'
+
+# kivy-ios creates the Xcode project inside the application source directory.
+# Its generated resource-copy phase rsyncs the whole source directory into
+# YourApp. Exclude the generated project itself so Xcode cannot race with
+# rsync while it is creating files under the project's build/ directory.
+PBXPROJ="$PWD/$auto_project_dir/gta6_iphone.xcodeproj/project.pbxproj"
+python3 -c 'from pathlib import Path; p=Path("'"$PBXPROJ"'"); s=p.read_text(); old="rsync -av --delete"; new="rsync -av --delete --exclude=\"gta6_iphone-ios\" --exclude=\".git\" --exclude=\".venv\" --exclude=\"xcode-build\" --exclude=\"diagnostics\""; assert old in s, "Generated Xcode rsync command not found"; p.write_text(s.replace(old, new, 1))'
+
+printf '\nXcode project created and rsync source exclusion patched successfully.\n'
