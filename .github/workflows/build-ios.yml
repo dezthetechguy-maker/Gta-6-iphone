@@ -1,0 +1,54 @@
+name: Build iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install iOS build tools
+        run: |
+          python -m pip install --upgrade pip setuptools wheel cython kivy-ios
+
+      - name: Build Python and Kivy
+        run: |
+          toolchain build python3 kivy
+
+      - name: Create Xcode project
+        run: |
+          toolchain create "GTA6 iPhone" . --alias gta6_ios
+
+      - name: Build Xcode project
+        run: |
+          cd gta6_ios-ios
+          xcodebuild \
+            -project gta6_ios.xcodeproj \
+            -scheme gta6_ios \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/GTA6.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$RUNNER_TEMP/GTA6.xcarchive/Products/Applications/"*.app "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -r GTA6-iPhone-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: GTA6-iPhone-unsigned
+          path: ${{ runner.temp }}/GTA6-iPhone-unsigned.ipa
