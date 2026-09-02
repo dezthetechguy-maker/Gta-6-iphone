@@ -1,0 +1,41 @@
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / 'assets'
+ICON_PATH = ASSETS_DIR / 'icon.ico'
+
+APP_NAME = 'GTA VI Fan Dev Build'
+VERSION = '0.6.13-alpha'
+WINDOW_WIDTH = 1280
+WINDOW_HEIGHT = 720
+FPS = 60
+
+TERMINAL_DURATION = 2.0
+TERMINAL_LINES_MIN = 50
+TERMINAL_LINES_MAX = 150
+
+# The loading screen is the cinematic image-based version from build (2)(1).
+LOADING_DURATION = 13.5
+ZOOM_START = 1.0
+ZOOM_END = 1.06
+COLOR_WHITE = '#FFFFFF'
+COLOR_DARK = '#0A0A0A'
+
+COLOR_PRIMARY = '#ff4fb3'
+COLOR_SECONDARY = '#45d7ff'
+COLOR_ACCENT = '#ff8f3d'
+
+DISCORD_CLIENT_ID = '1543708194147410151'
+
+# Menu is intentionally limited to these large tabs; Free Roam was removed.
+MENU_ITEMS = ['STORY', 'CHARACTERS', 'MAP', 'OPTIONS', 'DEVELOPER', 'EXIT']
+CHARACTERS = ['LUCIA', 'JASON']
+WEATHER = ['CLEAR', 'SUNSET', 'NIGHT', 'RAIN', 'STORM', 'FOGGY']
+TITLE = 'VICE CITY'
+SUBTITLE = 'ALPHA DEV ENVIRONMENT'
+BUILD = '0.6.13'
+REVISION = '4217'
+BRANCH = 'ALPHA_DEV'
+PLATFORM = 'PC'
+RENDER = 'DX12'
+TERMINAL_MS = 2200

@@ -269,67 +269,52 @@ class Loading(Screen):
 
 
 class MenuCard(ButtonBehavior, FloatLayout):
-    """Uniform iOS menu card. The supplied tab artwork stays inside the card."""
-    def __init__(self, key, title, desc, image_path=None, background_path=None,
-                 active=False, on_activate=None, **kwargs):
+    def __init__(self, key, title, desc, image_path=None, active=False, on_activate=None, **kwargs):
         super().__init__(**kwargs)
         self.key = key
         self.active = active
         self.on_activate = on_activate
+        self._pressed = False
 
-        # Neutral card frame: NO active pink glow.
         with self.canvas.before:
-            Color(0.01, 0.015, 0.025, 0.24)
-            self.card_bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
+            Color(0.015, 0.02, 0.03, 0.78)
+            self.bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[9])
         with self.canvas.after:
-            Color(1, 1, 1, 0.34)
-            self.border = Line(rounded_rectangle=(0, 0, 0, 0, 10), width=1.05)
+            Color(*(PINK if active else (1, 1, 1, .25)))
+            self.border = Line(rounded_rectangle=(0, 0, 0, 0, 9), width=1.2)
         self.bind(pos=self._sync, size=self._sync)
 
-        # Fill the entire card with the supplied tab artwork.  ``cover`` is
-        # deliberate here: every card gets the same visual geometry regardless
-        # of the source image's aspect ratio.  Wide/portrait artwork is cropped
-        # cleanly at the card edges instead of appearing small or overflowing.
+        # Image area: true 16:9 content, clipped by the card bounds.
+        frame = FloatLayout(size_hint=(1, .72), pos_hint={'x': 0, 'top': 1})
+        with frame.canvas.before:
+            Color(0, 0, 0, .10)
+            self.image_bg = Rectangle(pos=frame.pos, size=frame.size)
+        frame.bind(pos=lambda *_: self._sync_frame(frame), size=lambda *_: self._sync_frame(frame))
         if image_path and Path(image_path).exists():
-            self.art = Image(
-                source=str(image_path),
-                fit_mode='cover',
-                size_hint=(1, 1),
-                pos_hint={'x': 0, 'y': 0},
-            )
-            self.add_widget(self.art)
+            img = Image(source=str(image_path), fit_mode='cover', size_hint=(1, 1), allow_stretch=True)
+        else:
+            img = Image(size_hint=(1, 1))
+        frame.add_widget(img)
+        self.add_widget(frame)
 
-        # Very light overall tint plus a darker text band at the bottom.
-        # The artwork remains visible across the whole card.
-        with self.canvas.after:
-            Color(0, 0, 0, 0.06)
-            self.art_shade = Rectangle(pos=self.pos, size=self.size)
-            Color(0.005, 0.008, 0.012, 0.58)
-            self.text_panel = Rectangle(pos=self.pos, size=(self.width, self.height * .31))
+        title_color = WHITE if active else (.94, .95, .97, 1)
+        self.add_widget(make_label(title, 17 if key != 'DEVELOPER' else 15, title_color, True,
+                                   size_hint=(.94, .14), pos_hint={'x': .03, 'y': .075},
+                                   text_size=(None, None)))
+        self.add_widget(make_label(desc, 8.5, MUTED, False,
+                                   size_hint=(.94, .11), pos_hint={'x': .03, 'y': .005},
+                                   text_size=(None, None)))
 
-        self.add_widget(make_label(
-            title, 16 if key != 'DEVELOPER' else 14.5, WHITE, True,
-            size_hint=(.94, .10), pos_hint={'x': .03, 'y': .085},
-            text_size=(None, None)
-        ))
-        self.add_widget(make_label(
-            desc, 7.6, (.82, .85, .89, 1), False,
-            size_hint=(.94, .09), pos_hint={'x': .03, 'y': .025},
-            text_size=(None, None)
-        ))
+    def _sync_frame(self, frame):
+        self.image_bg.pos = frame.pos
+        self.image_bg.size = frame.size
 
     def _sync(self, *_):
-        self.card_bg.pos = self.pos
-        self.card_bg.size = self.size
-        self.border.rounded_rectangle = (self.x, self.y, self.width, self.height, 10)
-        self.art_shade.pos = self.pos
-        self.art_shade.size = self.size
-        self.text_panel.pos = (self.x, self.y)
-        self.text_panel.size = (self.width, self.height * .31)
+        self.bg.pos = self.pos
+        self.bg.size = self.size
+        self.border.rounded_rectangle = (self.x, self.y, self.width, self.height, 9)
 
     def on_release(self):
-        # Story is the only active card for this build. The other four remain
-        # visual-only and deliberately do nothing when touched.
         if self.active and self.on_activate:
             self.on_activate(self.key)
 
@@ -340,37 +325,32 @@ class Menu(Screen):
         root = FixedStage()
         self.add_widget(root)
 
-        # Original Vice City menu background.
+        # Use the supplied story background as the cinematic menu background.
         bg = find_image('story', 'background')
         if bg:
-            root.stage.add_widget(Image(
-                source=str(bg), fit_mode='cover', size_hint=(1, 1),
-                pos_hint={'x': 0, 'y': 0}
-            ))
+            root.stage.add_widget(Image(source=str(bg), fit_mode='cover', size_hint=(1, 1), allow_stretch=True))
         else:
-            with root.stage.canvas.before:
-                Color(*BLACK)
-                Rectangle(pos=root.stage.pos, size=root.stage.size)
+            root.stage.canvas.add(Color(*BLACK))
+
+        # Very light readability layer — intentionally not a black film.
+        with root.stage.canvas.after:
+            Color(0, 0, 0, .045)
+            self.shade = Rectangle(pos=root.stage.pos, size=root.stage.size)
+        root.stage.bind(pos=lambda *_: self._sync_shade(root), size=lambda *_: self._sync_shade(root))
 
         content = FloatLayout(size_hint=(1, 1))
         root.stage.add_widget(content)
 
-        content.add_widget(make_label(
-            'V I C E   C I T Y', 38, WHITE, True,
-            size_hint=(1, .10), pos_hint={'x': 0, 'top': .965}
-        ))
+        content.add_widget(make_label('V I C E   C I T Y', 38, WHITE, True,
+                                      size_hint=(1, .10), pos_hint={'x': 0, 'top': .97}))
         content.add_widget(make_label(
             'INTERNAL ALPHA ENVIRONMENT   //   BUILD 0.6.13   //   REVISION 4217',
-            9.2, (1, .72, .84, 1), False,
-            size_hint=(1, .045), pos_hint={'x': 0, 'top': .885}
+            9.5, (1, .72, .84, 1), False, size_hint=(1, .045), pos_hint={'x': 0, 'top': .885}
         ))
-        content.add_widget(make_label(
-            'ONLINE  /  DEV BUILD', 9.2, CYAN, True,
-            size_hint=(None, .05), width=165,
-            pos_hint={'right': .97, 'top': .955}
-        ))
+        content.add_widget(make_label('ONLINE  /  DEV BUILD', 9.5, CYAN, True,
+                                      size_hint=(None, .05), width=165, pos_hint={'right': .97, 'top': .955}))
 
-        # All five tab images are shown in a single stable row; Story is first/left.
+        # Five real tab images supplied by the user. Story is deliberately first/left.
         tabs = [
             ('STORY', 'STORY MODE', 'PLAY THE CAMPAIGN / STORY VIDEO', 'story', 'story', True),
             ('CHARACTERS', 'CHARACTERS', 'LUCIA / JASON CHARACTER TEST', 'characters', 'characters', False),
@@ -379,34 +359,25 @@ class Menu(Screen):
             ('DEVELOPER', 'DEVELOPER', 'DEV TOOLS / CONSOLE / BUILD PIPELINE', 'developer', 'developer', False),
         ]
 
-        row = BoxLayout(
-            orientation='horizontal', spacing=12,
-            size_hint=(.94, .46), pos_hint={'x': .03, 'y': .255}
-        )
+        # Keep a clean single-row layout. Equal cards make the menu stable across devices.
+        row = BoxLayout(orientation='horizontal', spacing=12,
+                        size_hint=(.94, .49), pos_hint={'x': .03, 'y': .24})
         for key, title, desc, folder, stem, active in tabs:
-            art = find_image(folder, stem)
-            card_bg = find_image(folder, 'background')
-            card = MenuCard(
-                key, title, desc,
-                image_path=art, background_path=card_bg,
-                active=active, on_activate=self.activate,
-            )
+            p = find_image(folder, stem)
+            card = MenuCard(key, title, desc, p, active=active, on_activate=self.activate)
             row.add_widget(card)
         content.add_widget(row)
 
-        content.add_widget(make_label(
-            'SELECT A TAB   •   TAP TO OPEN', 9.2, WHITE, True,
-            size_hint=(1, .045), pos_hint={'x': 0, 'y': .175}
-        ))
-        content.add_widget(make_label(
-            'TOUCH-FIRST iOS BUILD  •  16:9 PRESENTATION', 8.1, MUTED,
-            size_hint=(1, .035), pos_hint={'x': 0, 'y': .105}
-        ))
-        content.add_widget(make_label(
-            'STORY MODE IS THE ONLY ACTIVE TAB IN THIS BUILD', 8,
-            (1, .70, .80, 1),
-            size_hint=(1, .03), pos_hint={'x': 0, 'y': .05}
-        ))
+        content.add_widget(make_label('SELECT A TAB   •   TAP TO OPEN', 9.5, WHITE, True,
+                                      size_hint=(1, .045), pos_hint={'x': 0, 'y': .16}))
+        content.add_widget(make_label('TOUCH-FIRST iOS BUILD  •  16:9 PRESENTATION', 8.3, MUTED,
+                                      size_hint=(1, .035), pos_hint={'x': 0, 'y': .09}))
+        content.add_widget(make_label('STORY MODE IS THE ONLY ACTIVE TAB IN THIS BUILD', 8, (1, .60, .72, 1),
+                                      size_hint=(1, .03), pos_hint={'x': 0, 'y': .035}))
+
+    def _sync_shade(self, root):
+        self.shade.pos = root.stage.pos
+        self.shade.size = root.stage.size
 
     def activate(self, key):
         if key == 'STORY':
