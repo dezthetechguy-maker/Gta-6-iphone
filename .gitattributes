@@ -1,0 +1,5 @@
+assets/videos/*.mp4 filter=lfs diff=lfs merge=lfs -text
+assets/tabs/*.jpg filter=lfs diff=lfs merge=lfs -text
+assets/tabs/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+assets/tabs/**/*.png filter=lfs diff=lfs merge=lfs -text
+assets/tabs/**/*.webp filter=lfs diff=lfs merge=lfs -text
