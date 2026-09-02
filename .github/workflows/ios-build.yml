@@ -7,37 +7,56 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    # Pin the macOS generation instead of macos-latest so a future runner
+    # image/Xcode update cannot silently break the native toolchain.
+    runs-on: macos-14
     steps:
       - name: Checkout repository with Git LFS
         uses: actions/checkout@v4
         with:
           lfs: true
 
-      - name: Select Python 3.12
+      - name: Select Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
+          cache: pip
+
+      - name: Show build environment
+        run: |
+          set -e
+          sw_vers
+          xcodebuild -version
+          xcode-select -p
+          python --version
+          git lfs version
 
       - name: Install macOS build dependencies
         run: |
+          brew update
           brew install autoconf automake libtool pkg-config
           brew link libtool --overwrite
 
       - name: Build Kivy iOS project
+        shell: bash
         run: |
+          set -o pipefail
           chmod +x build_ios.sh
-          ./build_ios.sh
+          ./build_ios.sh 2>&1 | tee ios-build.log
 
       - name: Show generated Xcode project
+        if: success()
         run: |
+          set -e
           find . -maxdepth 3 -name '*.xcodeproj' -print
           find . -maxdepth 2 -type d -name '*-ios' -print
 
       - name: Package generated Xcode project
+        if: success()
         run: |
+          set -e
           mkdir -p artifacts
-          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' | head -n 1)"
+          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
           if [ -z "$PROJECT_DIR" ]; then
             echo 'No generated *-ios project directory found.'
             exit 1
@@ -45,8 +64,21 @@ jobs:
           tar -czf artifacts/gta6_ios_xcode_project.tar.gz "$PROJECT_DIR" dist
 
       - name: Upload build artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: gta6-ios-xcode-project
           path: artifacts/gta6_ios_xcode_project.tar.gz
           if-no-files-found: error
+
+      - name: Print useful failure diagnostics
+        if: failure()
+        run: |
+          echo '===== XCODE ====='
+          xcodebuild -version || true
+          echo '===== PYTHON ====='
+          python --version || true
+          echo '===== TOOLCHAIN ====='
+          .venv/bin/toolchain recipes --compact 2>&1 || true
+          echo '===== LAST 200 BUILD LOG LINES ====='
+          tail -n 200 ios-build.log 2>/dev/null || true
