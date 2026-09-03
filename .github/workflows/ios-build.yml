@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: macos-14
+
     steps:
       - name: Checkout repository with Git LFS
         uses: actions/checkout@v4
@@ -21,6 +22,7 @@ jobs:
           cache: pip
 
       - name: Show build environment
+        shell: bash
         run: |
           set -euo pipefail
           sw_vers
@@ -30,6 +32,7 @@ jobs:
           git lfs version
 
       - name: Install macOS build dependencies
+        shell: bash
         run: |
           set -euo pipefail
           brew install autoconf automake libtool pkg-config
@@ -40,122 +43,158 @@ jobs:
         run: |
           set -o pipefail
           chmod +x build_ios.sh
-          ./build_ios.sh 2>&1 | tee ios-build.log
+          ./build_ios.sh 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
 
-      - name: Verify generated project contains the app source
+      - name: Locate and inspect generated Xcode project
         shell: bash
         run: |
           set -euo pipefail
-          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
-          if [ -z "$PROJECT_DIR" ]; then
-            echo 'No generated *-ios project directory found.'
+          PROJECT_FILE="${KIVY_IOS_PROJECT_FILE:-}"
+          PROJECT_DIR="${KIVY_IOS_PROJECT_DIR:-}"
+          if [ -z "$PROJECT_FILE" ] || [ ! -f "$PROJECT_FILE/project.pbxproj" ]; then
+            echo 'ERROR: Generated Xcode project was not found.'
+            find "$GITHUB_WORKSPACE/.." -maxdepth 2 -name '*.xcodeproj' -print || true
             exit 1
           fi
-          test -f main.py
-          test -f main_ios.py
-          test -d assets
-          test -f "$PROJECT_DIR/gta6_iphone.xcodeproj/project.pbxproj"
-          echo "Project: $PROJECT_DIR"
-          echo 'Source files and Xcode project are present.'
+          test -f "$GITHUB_WORKSPACE/main.py"
+          test -f "$GITHUB_WORKSPACE/main_ios.py"
+          test -d "$GITHUB_WORKSPACE/assets"
+          xcodebuild -list -project "$PROJECT_FILE" | tee "$RUNNER_TEMP/xcode-list.log"
+          echo "KIVY_IOS_PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "KIVY_IOS_PROJECT_FILE=$PROJECT_FILE" >> "$GITHUB_ENV"
 
-      - name: Inspect Xcode project targets
+      - name: Select the application target
         shell: bash
         run: |
           set -euo pipefail
-          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
-          PROJECT_FILE="$PROJECT_DIR/gta6_iphone.xcodeproj"
-          xcodebuild -list -project "$PROJECT_FILE"
+          PROJECT_FILE="$KIVY_IOS_PROJECT_FILE"
+          TARGET=''
+          while IFS= read -r candidate; do
+            [ -z "$candidate" ] && continue
+            product_type="$(xcodebuild -project "$PROJECT_FILE" -target "$candidate" -showBuildSettings 2>/dev/null | awk -F' = ' '/PRODUCT_TYPE = / {print $2; exit}')"
+            if [ "$product_type" = 'com.apple.product-type.application' ]; then
+              TARGET="$candidate"
+              break
+            fi
+          done < <(xcodebuild -list -project "$PROJECT_FILE" | awk '/^Targets:/{inside=1; next} /^Build Configurations:/{inside=0} inside && NF {gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print}')
+
+          if [ -z "$TARGET" ]; then
+            echo 'ERROR: Could not identify the application target.'
+            xcodebuild -list -project "$PROJECT_FILE"
+            exit 1
+          fi
+
+          echo "KIVY_IOS_TARGET=$TARGET" >> "$GITHUB_ENV"
+          echo "Selected application target: $TARGET"
 
       - name: Build unsigned iOS device app with Xcode
         shell: bash
         run: |
           set -o pipefail
-          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
-          PROJECT_FILE="$PROJECT_DIR/gta6_iphone.xcodeproj"
           BUILD_OUTPUT_DIR="$RUNNER_TEMP/gta6-xcode-build"
-          rm -rf "$BUILD_OUTPUT_DIR" xcode-build
+          rm -rf "$BUILD_OUTPUT_DIR"
           mkdir -p "$BUILD_OUTPUT_DIR"
+
           xcodebuild \
-            -project "$PROJECT_FILE" \
-            -target gta6_iphone \
-            -configuration Debug \
+            -project "$KIVY_IOS_PROJECT_FILE" \
+            -target "$KIVY_IOS_TARGET" \
+            -configuration Release \
             -sdk iphoneos \
             CONFIGURATION_BUILD_DIR="$BUILD_OUTPUT_DIR" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build 2>&1 | tee xcode-build.log
-          cp -R "$BUILD_OUTPUT_DIR" ./xcode-build
-          echo "Xcode output copied to $PWD/xcode-build"
+            build 2>&1 | tee "$RUNNER_TEMP/xcode-build.log"
 
       - name: Verify built app bundle
         shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="$(find xcode-build -type d -name '*.app' -print -quit)"
+          APP_PATH="$(find "$RUNNER_TEMP/gta6-xcode-build" -type d -name '*.app' -print -quit)"
           if [ -z "$APP_PATH" ]; then
-            echo 'Xcode reported success but no .app bundle was produced.'
-            find xcode-build -maxdepth 4 -print || true
+            echo 'ERROR: Xcode completed without producing an .app bundle.'
+            find "$RUNNER_TEMP/gta6-xcode-build" -maxdepth 4 -print || true
             exit 1
           fi
-          test -f "$APP_PATH/Info.plist"
-          MAIN_PYC="$(find "$APP_PATH" -type f -name 'main.pyc' -print -quit)"
-          if [ -z "$MAIN_PYC" ]; then
-            echo 'Built app is missing main.pyc.'
-            find "$APP_PATH" -maxdepth 4 -type f | head -n 150
-            exit 1
-          fi
-          echo "Built app: $APP_PATH"
-          echo "Python entrypoint: $MAIN_PYC"
-          du -sh "$APP_PATH"
 
-      - name: Package generated Xcode project and unsigned app
+          test -f "$APP_PATH/Info.plist"
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")"
+          test -n "$EXECUTABLE"
+          test -f "$APP_PATH/$EXECUTABLE"
+          test -f "$APP_PATH/main.pyc"
+
+          echo "Built app: $APP_PATH"
+          echo "Executable: $EXECUTABLE"
+          du -sh "$APP_PATH"
+          echo "KIVY_IOS_APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          IPA_ROOT="$RUNNER_TEMP/ipa"
+          rm -rf "$IPA_ROOT"
+          mkdir -p "$IPA_ROOT/Payload"
+          cp -R "$KIVY_IOS_APP_PATH" "$IPA_ROOT/Payload/"
+          cd "$IPA_ROOT"
+          /usr/bin/zip -qry "$RUNNER_TEMP/gta6_iphone-unsigned.ipa" Payload
+          test -f "$RUNNER_TEMP/gta6_iphone-unsigned.ipa"
+          ls -lh "$RUNNER_TEMP/gta6_iphone-unsigned.ipa"
+
+      - name: Package Xcode project and build logs
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts
-          PROJECT_DIR="$(find . -maxdepth 1 -type d -name '*-ios' -print -quit)"
-          APP_PATH="$(find xcode-build -type d -name '*.app' -print -quit)"
-          if [ -z "$PROJECT_DIR" ] || [ -z "$APP_PATH" ]; then
-            echo 'Required build outputs are missing.'
-            exit 1
-          fi
-          tar -czf artifacts/gta6_ios_build.tar.gz "$PROJECT_DIR" dist xcode-build
+          mkdir -p "$RUNNER_TEMP/artifacts"
+          tar -czf "$RUNNER_TEMP/artifacts/gta6_ios_xcode_project.tar.gz" \
+            -C "$(dirname "$KIVY_IOS_PROJECT_DIR")" \
+            "$(basename "$KIVY_IOS_PROJECT_DIR")" \
+            -C "$GITHUB_WORKSPACE" dist
+          cp "$RUNNER_TEMP/ios-build.log" "$RUNNER_TEMP/artifacts/ios-build.log" || true
+          cp "$RUNNER_TEMP/xcode-build.log" "$RUNNER_TEMP/artifacts/xcode-build.log" || true
 
-      - name: Upload build artifact
+      - name: Upload iOS build artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: gta6-ios-build
-          path: artifacts/gta6_ios_build.tar.gz
+          path: |
+            ${{ runner.temp }}/gta6_iphone-unsigned.ipa
+            ${{ runner.temp }}/artifacts/gta6_ios_xcode_project.tar.gz
+            ${{ runner.temp }}/artifacts/ios-build.log
+            ${{ runner.temp }}/artifacts/xcode-build.log
           if-no-files-found: error
 
-      - name: Print useful failure diagnostics
+      - name: Collect failure diagnostics
         if: failure()
         shell: bash
         run: |
           set +e
-          mkdir -p diagnostics
+          mkdir -p "$RUNNER_TEMP/diagnostics"
           {
             echo '===== XCODE ====='
             xcodebuild -version
             echo '===== PYTHON ====='
             python --version
-            echo '===== TOOLCHAIN ====='
-            .venv/bin/toolchain recipes --compact 2>&1
-            echo '===== KIVY BUILD LOG (LAST 200) ====='
-            tail -n 200 ios-build.log 2>/dev/null
-            echo '===== XCODE BUILD LOG (LAST 300) ====='
-            tail -n 300 xcode-build.log 2>/dev/null
-          } | tee diagnostics/failure-diagnostics.txt
+            python -m pip show kivy-ios Cython packaging
+            echo '===== PROJECT ====='
+            printf 'Project: %s\nTarget: %s\n' "${KIVY_IOS_PROJECT_FILE:-<unset>}" "${KIVY_IOS_TARGET:-<unset>}"
+            echo '===== KIVY LOG (LAST 250) ====='
+            tail -n 250 "$RUNNER_TEMP/ios-build.log" 2>/dev/null
+            echo '===== XCODE LIST (LAST 150) ====='
+            tail -n 150 "$RUNNER_TEMP/xcode-list.log" 2>/dev/null
+            echo '===== XCODE BUILD LOG (LAST 350) ====='
+            tail -n 350 "$RUNNER_TEMP/xcode-build.log" 2>/dev/null
+          } | tee "$RUNNER_TEMP/diagnostics/failure-diagnostics.txt"
 
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-diagnostics
+          name: gta6-ios-failure-diagnostics
           path: |
-            diagnostics/failure-diagnostics.txt
-            ios-build.log
-            xcode-build.log
+            ${{ runner.temp }}/diagnostics/failure-diagnostics.txt
+            ${{ runner.temp }}/ios-build.log
+            ${{ runner.temp }}/xcode-list.log
+            ${{ runner.temp }}/xcode-build.log
           if-no-files-found: ignore
