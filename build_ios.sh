@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Kivy-ios creates <title>-ios next to the application directory.
+# Kivy-ios creates <title>-ios inside the current working directory.
 # Keep all toolchain state outside the checkout so Xcode never syncs the
 # virtual environment or generated build output into YourApp.
 APP_NAME="gta6_iphone"
@@ -22,16 +22,16 @@ toolchain build python3 kivy ffpyplayer
 # The app directory must be a fully-qualified path and must contain main.py.
 test -f "$PWD/main.py"
 
-# Kivy-ios creates gta6_iphone-ios beside the source checkout.
-rm -rf "$(cd "$PWD/.." && pwd)/$APP_DIR"
+# Kivy-ios creates gta6_iphone-ios inside the source checkout.
+PROJECT_DIR="$PWD/$APP_DIR"
+rm -rf "$PROJECT_DIR"
 toolchain create "$APP_NAME" "$PWD"
 
-PROJECT_DIR="$(cd "$PWD/.." && pwd)/$APP_DIR"
 PROJECT_FILE="$(find "$PROJECT_DIR" -maxdepth 1 -type f -name '*.xcodeproj' -print -quit)"
 
 if [ -z "$PROJECT_FILE" ]; then
     echo "ERROR: kivy-ios did not create an Xcode project in $PROJECT_DIR" >&2
-    find "$(cd "$PWD/.." && pwd)" -maxdepth 2 -type d -name '*-ios' -print >&2 || true
+    find "$PWD" -maxdepth 2 -type d -name '*-ios' -print >&2 || true
     exit 1
 fi
 
