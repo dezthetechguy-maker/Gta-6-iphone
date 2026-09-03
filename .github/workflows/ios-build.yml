@@ -53,7 +53,7 @@ jobs:
           PROJECT_DIR="${KIVY_IOS_PROJECT_DIR:-}"
           if [ -z "$PROJECT_FILE" ] || [ ! -f "$PROJECT_FILE/project.pbxproj" ]; then
             echo 'ERROR: Generated Xcode project was not found.'
-            find "$GITHUB_WORKSPACE/.." -maxdepth 2 -name '*.xcodeproj' -print || true
+            find "$GITHUB_WORKSPACE/.." -maxdepth 3 -name '*.xcodeproj' -print || true
             exit 1
           fi
           test -f "$GITHUB_WORKSPACE/main.py"
@@ -68,18 +68,44 @@ jobs:
         run: |
           set -euo pipefail
           PROJECT_FILE="$KIVY_IOS_PROJECT_FILE"
+
+          # Kivy-ios exposes the app as a normal Xcode target. Do not use
+          # PRODUCT_TYPE from -showBuildSettings here: PRODUCT_TYPE is not
+          # guaranteed to be emitted by xcodebuild for every generated target.
+          TARGETS="$(xcodebuild -list -project "$PROJECT_FILE" | awk '
+            /^Targets:/{inside=1; next}
+            /^Build Configurations:/{inside=0}
+            inside && NF {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+              print
+            }
+          ')"
+
+          echo 'Detected Xcode targets:'
+          printf '%s\n' "$TARGETS"
+
           TARGET=''
           while IFS= read -r candidate; do
             [ -z "$candidate" ] && continue
-            product_type="$(xcodebuild -project "$PROJECT_FILE" -target "$candidate" -showBuildSettings 2>/dev/null | awk -F' = ' '/PRODUCT_TYPE = / {print $2; exit}')"
-            if [ "$product_type" = 'com.apple.product-type.application' ]; then
+            if [ "$candidate" = 'gta6_iphone' ]; then
               TARGET="$candidate"
               break
             fi
-          done < <(xcodebuild -list -project "$PROJECT_FILE" | awk '/^Targets:/{inside=1; next} /^Build Configurations:/{inside=0} inside && NF {gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print}')
+          done <<EOF
+          $TARGETS
+          EOF
+
+          # Fall back to the only target when Kivy-ios generated a different
+          # name. This also keeps the workflow resilient to harmless naming changes.
+          if [ -z "$TARGET" ]; then
+            TARGET_COUNT="$(printf '%s\n' "$TARGETS" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
+            if [ "$TARGET_COUNT" = '1' ]; then
+              TARGET="$(printf '%s\n' "$TARGETS" | sed '/^[[:space:]]*$/d' | head -n 1)"
+            fi
+          fi
 
           if [ -z "$TARGET" ]; then
-            echo 'ERROR: Could not identify the application target.'
+            echo 'ERROR: Could not identify the Kivy application target.'
             xcodebuild -list -project "$PROJECT_FILE"
             exit 1
           fi
@@ -97,7 +123,7 @@ jobs:
 
           xcodebuild \
             -project "$KIVY_IOS_PROJECT_FILE" \
-            -target "$KIVY_IOS_TARGET" \
+            -scheme "$KIVY_IOS_TARGET" \
             -configuration Release \
             -sdk iphoneos \
             CONFIGURATION_BUILD_DIR="$BUILD_OUTPUT_DIR" \
