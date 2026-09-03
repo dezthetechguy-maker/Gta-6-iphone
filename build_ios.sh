@@ -29,7 +29,9 @@ toolchain create GTA6_iPhone "$PWD"
 # Its generated resource-copy phase rsyncs the whole source directory into
 # YourApp. Exclude the generated project itself so Xcode cannot race with
 # rsync while it is creating files under the project's build/ directory.
+# Do not quote the exclude values: the generated pbxproj is an old-style
+# property list, so literal quotes here would corrupt its syntax.
 PBXPROJ="$PWD/$auto_project_dir/gta6_iphone.xcodeproj/project.pbxproj"
-python3 -c 'from pathlib import Path; p=Path("'"$PBXPROJ"'"); s=p.read_text(); old="rsync -av --delete"; new="rsync -av --delete --exclude=\"gta6_iphone-ios\" --exclude=\".git\" --exclude=\".venv\" --exclude=\"xcode-build\" --exclude=\"diagnostics\""; assert old in s, "Generated Xcode rsync command not found"; p.write_text(s.replace(old, new, 1))'
+python3 -c 'from pathlib import Path; p=Path("'"$PBXPROJ"'"); s=p.read_text(); old="rsync -av --delete"; new="rsync -av --delete --exclude=gta6_iphone-ios --exclude=.git --exclude=.venv --exclude=xcode-build --exclude=diagnostics"; assert old in s, "Generated Xcode rsync command not found"; p.write_text(s.replace(old, new, 1))'
 
 printf '\nXcode project created and rsync source exclusion patched successfully.\n'
