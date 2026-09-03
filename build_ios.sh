@@ -27,7 +27,8 @@ PROJECT_DIR="$PWD/$APP_DIR"
 rm -rf "$PROJECT_DIR"
 toolchain create "$APP_NAME" "$PWD"
 
-PROJECT_FILE="$(find "$PROJECT_DIR" -maxdepth 1 -type f -name '*.xcodeproj' -print -quit)"
+# .xcodeproj is a directory, not a regular file.
+PROJECT_FILE="$(find "$PROJECT_DIR" -maxdepth 1 -type d -name '*.xcodeproj' -print -quit)"
 
 if [ -z "$PROJECT_FILE" ]; then
     echo "ERROR: kivy-ios did not create an Xcode project in $PROJECT_DIR" >&2
