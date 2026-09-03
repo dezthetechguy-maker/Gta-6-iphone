@@ -32,6 +32,10 @@ toolchain create GTA6_iPhone "$PWD"
 # Do not quote the exclude values: the generated pbxproj is an old-style
 # property list, so literal quotes here would corrupt its syntax.
 PBXPROJ="$PWD/$auto_project_dir/gta6_iphone.xcodeproj/project.pbxproj"
-python3 -c 'from pathlib import Path; import re; p=Path("'"$PBXPROJ"'"); s=p.read_text(); old="rsync -av --delete"; new="rsync -av --delete --exclude=gta6_iphone-ios --exclude=.git --exclude=.venv --exclude=xcode-build --exclude=diagnostics --exclude=build --exclude=dist"; assert old in s, "Generated Xcode rsync command not found"; s=s.replace(old, new, 1); pattern=r"(?:/usr/bin/)?python3 -m compileall.*?(?=\\n)"; replacement="python3 -m compileall -q \"$PROJECT_DIR/YourApp/main.py\" \"$PROJECT_DIR/YourApp/main_ios.py\" \"$PROJECT_DIR/YourApp/desktop_main.py\" \"$PROJECT_DIR/YourApp/ui\" \"$PROJECT_DIR/YourApp/utils\""; s,n=re.subn(pattern, replacement, s, count=1); assert n == 1, "Generated Xcode compileall command not found"; p.write_text(s)'
+python3 -c 'from pathlib import Path; import re; p=Path("'"$PBXPROJ"'"); s=p.read_text(); old="rsync -av --delete"; new="rsync -av --delete --exclude=gta6_iphone-ios --exclude=.git --exclude=.venv --exclude=xcode-build --exclude=diagnostics --exclude=build --exclude=dist"; assert old in s, "Generated Xcode rsync command not found"; s=s.replace(old, new, 1); pattern=r"/dist/hostpython3/bin/python -m compileall -f -b \"\$PROJECT_DIR\"/YourApp"; replacement="/dist/hostpython3/bin/python -m compileall -q \$PROJECT_DIR/YourApp/main.py \$PROJECT_DIR/YourApp/main_ios.py \$PROJECT_DIR/YourApp/desktop_main.py \$PROJECT_DIR/YourApp/ui \$PROJECT_DIR/YourApp/utils"; s,n=re.subn(pattern, replacement, s, count=1); assert n == 1, "Generated Xcode compileall command not found"; p.write_text(s)'
 
-printf '\nXcode project created and generated build phase patched successfully.\n'
+# Verify the generated project is still a valid OpenStep property list and
+# that the two critical generated shell phases contain the intended commands.
+python3 -c 'from pathlib import Path; p=Path("'"$PBXPROJ"'"); s=p.read_text(); assert "--exclude=build --exclude=dist" in s; assert "compileall -q $PROJECT_DIR/YourApp/main.py $PROJECT_DIR/YourApp/main_ios.py $PROJECT_DIR/YourApp/desktop_main.py $PROJECT_DIR/YourApp/ui $PROJECT_DIR/YourApp/utils" in s; print("Generated Xcode build phases verified.")'
+
+printf '\nXcode project created and generated build phases patched successfully.\n'
