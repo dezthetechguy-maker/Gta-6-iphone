@@ -3,7 +3,7 @@ set -eu
 
 # Kivy-ios creates <title>-ios inside the current working directory.
 # Keep the application source that toolchain create() copies separate from
-# the live checkout/toolchain build directory.  Kivy-ios builds FFmpeg and
+# the live checkout/toolchain build directory. Kivy-ios builds FFmpeg and
 # other recipes under ./build; that directory changes while Xcode's generated
 # Run Script uses rsync, which can otherwise hit rsync exit 24 (files vanished).
 APP_NAME="gta6_iphone"
@@ -24,7 +24,7 @@ python -m pip install "kivy-ios==2025.5.17" "Cython==0.29.37" packaging
 # NOT copied into the application source staged below.
 toolchain build python3 kivy ffpyplayer
 
-# The application source must contain main.py.  Stage only the files needed by
+# The application source must contain main.py. Stage only the files needed by
 # the app so the generated Xcode project's rsync phase never sees the mutable
 # Kivy-ios ./build tree or the generated <name>-ios project itself.
 test -f "$PWD/main.py"
@@ -54,14 +54,13 @@ if [ -z "$PROJECT_FILE" ]; then
     exit 1
 fi
 
-# Kivy's generated Xcode project needs to advertise the same landscape-only
-# orientation as the runtime UI.  Patch the generated application Info.plist
-# instead of relying on a desktop Window.size, which has no useful meaning on
-# an actual iPhone.
-PLIST_FILE="$(find "$PROJECT_DIR" -type f -name 'Info.plist' -print -quit)"
+# Kivy-ios commonly names the generated plist <app>-Info.plist rather than
+# Info.plist. Locate either form so orientation configuration works across
+# Kivy-ios/Xcode project layouts.
+PLIST_FILE="$(find "$PROJECT_DIR" -type f \( -name 'Info.plist' -o -name '*-Info.plist' \) -print -quit)"
 if [ -z "$PLIST_FILE" ]; then
-    echo "ERROR: Generated Xcode project does not contain Info.plist." >&2
-    find "$PROJECT_DIR" -maxdepth 5 -type f -name '*.plist' -print >&2 || true
+    echo "ERROR: Generated Xcode project does not contain an application Info.plist." >&2
+    find "$PROJECT_DIR" -maxdepth 6 -type f -name '*.plist' -print >&2 || true
     exit 1
 fi
 
