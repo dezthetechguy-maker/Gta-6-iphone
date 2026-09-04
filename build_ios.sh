@@ -54,6 +54,18 @@ if [ -z "$PROJECT_FILE" ]; then
     exit 1
 fi
 
+# Generate the app icon from the square icon image already stored in the repo.
+# Kivy-ios provides the supported `toolchain icon` command to populate the
+# generated Xcode project with the required icon assets.
+ICON_FILE="$PWD/assets/icon.png"
+if [ ! -f "$ICON_FILE" ]; then
+    echo "ERROR: App icon file is missing: $ICON_FILE" >&2
+    exit 1
+fi
+
+toolchain icon "$PROJECT_DIR" "$ICON_FILE"
+echo "Configured application icon from: $ICON_FILE"
+
 # Kivy-ios commonly names the generated plist <app>-Info.plist rather than
 # Info.plist. Locate either form so orientation configuration works across
 # Kivy-ios/Xcode project layouts.
