@@ -46,7 +46,7 @@ def make_label(text, size, color=WHITE, bold=False, **kwargs):
 
 
 class FixedStage(FloatLayout):
-    """Every screen is rendered on one fixed 16:9 stage, centered on the window."""
+    """Render the UI on a centered 16:9 stage using the live iOS viewport."""
     RATIO = 16 / 9
 
     def __init__(self, **kwargs):
@@ -57,6 +57,7 @@ class FixedStage(FloatLayout):
             Color(*BLACK)
             self.bg = Rectangle(pos=self.pos, size=self.size)
         self.bind(pos=self._layout, size=self._layout)
+        Clock.schedule_once(self._layout, 0)
 
     def _layout(self, *_):
         self.bg.pos = self.pos
@@ -64,14 +65,20 @@ class FixedStage(FloatLayout):
         w, h = self.size
         if w <= 0 or h <= 0:
             return
-        if w / h >= self.RATIO:
+
+        ratio = w / h
+        if ratio >= self.RATIO:
             sh = h
             sw = h * self.RATIO
         else:
             sw = w
             sh = w / self.RATIO
+
         self.stage.size = (sw, sh)
-        self.stage.pos = (self.x + (w - sw) / 2, self.y + (h - sh) / 2)
+        self.stage.pos = (
+            self.x + (w - sw) * 0.5,
+            self.y + (h - sh) * 0.5,
+        )
 
 
 class FittedImage(Image):
@@ -107,6 +114,7 @@ class CleanVideo(FloatLayout):
         self.stage.add_widget(self.video)
         self.video.bind(on_eos=self._eos)
         self.video.bind(texture=self._texture_ready)
+        Clock.schedule_once(self._layout, 0)
 
     def _layout(self, *_):
         self.bg.pos = self.pos
@@ -122,7 +130,10 @@ class CleanVideo(FloatLayout):
             sw = w
             sh = w / ratio
         self.stage.size = (sw, sh)
-        self.stage.pos = (self.x + (w - sw) / 2, self.y + (h - sh) / 2)
+        self.stage.pos = (
+            self.x + (w - sw) * 0.5,
+            self.y + (h - sh) * 0.5,
+        )
 
     def _texture_ready(self, *_):
         if self.video.texture:
@@ -277,7 +288,6 @@ class MenuCard(ButtonBehavior, FloatLayout):
         self.active = active
         self.on_activate = on_activate
 
-        # Neutral card frame: NO active pink glow.
         with self.canvas.before:
             Color(0.01, 0.015, 0.025, 0.24)
             self.card_bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
@@ -286,10 +296,6 @@ class MenuCard(ButtonBehavior, FloatLayout):
             self.border = Line(rounded_rectangle=(0, 0, 0, 0, 10), width=1.05)
         self.bind(pos=self._sync, size=self._sync)
 
-        # Fill the entire card with the supplied tab artwork.  ``cover`` is
-        # deliberate here: every card gets the same visual geometry regardless
-        # of the source image's aspect ratio.  Wide/portrait artwork is cropped
-        # cleanly at the card edges instead of appearing small or overflowing.
         if image_path and Path(image_path).exists():
             self.art = Image(
                 source=str(image_path),
@@ -299,8 +305,6 @@ class MenuCard(ButtonBehavior, FloatLayout):
             )
             self.add_widget(self.art)
 
-        # Very light overall tint plus a darker text band at the bottom.
-        # The artwork remains visible across the whole card.
         with self.canvas.after:
             Color(0, 0, 0, 0.06)
             self.art_shade = Rectangle(pos=self.pos, size=self.size)
@@ -328,8 +332,6 @@ class MenuCard(ButtonBehavior, FloatLayout):
         self.text_panel.size = (self.width, self.height * .31)
 
     def on_release(self):
-        # Story is the only active card for this build. The other four remain
-        # visual-only and deliberately do nothing when touched.
         if self.active and self.on_activate:
             self.on_activate(self.key)
 
@@ -340,7 +342,6 @@ class Menu(Screen):
         root = FixedStage()
         self.add_widget(root)
 
-        # Original Vice City menu background.
         bg = find_image('story', 'background')
         if bg:
             root.stage.add_widget(Image(
@@ -370,7 +371,6 @@ class Menu(Screen):
             pos_hint={'right': .97, 'top': .955}
         ))
 
-        # All five tab images are shown in a single stable row; Story is first/left.
         tabs = [
             ('STORY', 'STORY MODE', 'PLAY THE CAMPAIGN / STORY VIDEO', 'story', 'story', True),
             ('CHARACTERS', 'CHARACTERS', 'LUCIA / JASON CHARACTER TEST', 'characters', 'characters', False),
@@ -379,9 +379,13 @@ class Menu(Screen):
             ('DEVELOPER', 'DEVELOPER', 'DEV TOOLS / CONSOLE / BUILD PIPELINE', 'developer', 'developer', False),
         ]
 
+        # Use an explicitly centered row.  The live iOS viewport determines the
+        # final stage size, so this stays centered in both iPhone landscape sizes
+        # and the simulator instead of inheriting a desktop-sized window.
         row = BoxLayout(
             orientation='horizontal', spacing=12,
-            size_hint=(.94, .46), pos_hint={'x': .03, 'y': .255}
+            size_hint=(.94, .46),
+            pos_hint={'center_x': .5, 'y': .255},
         )
         for key, title, desc, folder, stem, active in tabs:
             art = find_image(folder, stem)
@@ -431,7 +435,15 @@ class Story(Screen):
 class GTA6iOS(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
-        Window.size = (1280, 720)
+
+        # Do not force a desktop-sized 1280x720 window on iOS.  The generated
+        # app now declares landscape-only orientations in its Info.plist, and
+        # Kivy will size widgets from the actual iPhone viewport.
+        try:
+            Window.fullscreen = True
+        except Exception:
+            pass
+
         sm = ScreenManager(transition=NoTransition())
         sm.add_widget(Boot(name='boot'))
         sm.add_widget(Loading(name='loading'))
