@@ -46,7 +46,7 @@ def make_label(text, size, color=WHITE, bold=False, **kwargs):
 
 
 class FixedStage(FloatLayout):
-    """Render the UI on a centered 16:9 stage using the live iOS viewport."""
+    """Render all presentation content on a centered 16:9 stage."""
     RATIO = 16 / 9
 
     def __init__(self, **kwargs):
@@ -58,6 +58,7 @@ class FixedStage(FloatLayout):
             self.bg = Rectangle(pos=self.pos, size=self.size)
         self.bind(pos=self._layout, size=self._layout)
         Clock.schedule_once(self._layout, 0)
+        Clock.schedule_once(self._layout, 0.2)
 
     def _layout(self, *_):
         self.bg.pos = self.pos
@@ -66,8 +67,7 @@ class FixedStage(FloatLayout):
         if w <= 0 or h <= 0:
             return
 
-        ratio = w / h
-        if ratio >= self.RATIO:
+        if w / h >= self.RATIO:
             sh = h
             sw = h * self.RATIO
         else:
@@ -75,10 +75,7 @@ class FixedStage(FloatLayout):
             sh = w / self.RATIO
 
         self.stage.size = (sw, sh)
-        self.stage.pos = (
-            self.x + (w - sw) * 0.5,
-            self.y + (h - sh) * 0.5,
-        )
+        self.stage.center = self.center
 
 
 class FittedImage(Image):
@@ -115,6 +112,7 @@ class CleanVideo(FloatLayout):
         self.video.bind(on_eos=self._eos)
         self.video.bind(texture=self._texture_ready)
         Clock.schedule_once(self._layout, 0)
+        Clock.schedule_once(self._layout, 0.2)
 
     def _layout(self, *_):
         self.bg.pos = self.pos
@@ -130,10 +128,7 @@ class CleanVideo(FloatLayout):
             sw = w
             sh = w / ratio
         self.stage.size = (sw, sh)
-        self.stage.pos = (
-            self.x + (w - sw) * 0.5,
-            self.y + (h - sh) * 0.5,
-        )
+        self.stage.center = self.center
 
     def _texture_ready(self, *_):
         if self.video.texture:
@@ -280,7 +275,7 @@ class Loading(Screen):
 
 
 class MenuCard(ButtonBehavior, FloatLayout):
-    """Uniform iOS menu card. The supplied tab artwork stays inside the card."""
+    """Uniform iOS menu card."""
     def __init__(self, key, title, desc, image_path=None, background_path=None,
                  active=False, on_activate=None, **kwargs):
         super().__init__(**kwargs)
@@ -379,9 +374,6 @@ class Menu(Screen):
             ('DEVELOPER', 'DEVELOPER', 'DEV TOOLS / CONSOLE / BUILD PIPELINE', 'developer', 'developer', False),
         ]
 
-        # Use an explicitly centered row.  The live iOS viewport determines the
-        # final stage size, so this stays centered in both iPhone landscape sizes
-        # and the simulator instead of inheriting a desktop-sized window.
         row = BoxLayout(
             orientation='horizontal', spacing=12,
             size_hint=(.94, .46),
@@ -436,13 +428,21 @@ class GTA6iOS(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
 
-        # Do not force a desktop-sized 1280x720 window on iOS.  The generated
-        # app now declares landscape-only orientations in its Info.plist, and
-        # Kivy will size widgets from the actual iPhone viewport.
-        try:
-            Window.fullscreen = True
-        except Exception:
-            pass
+        # UIKit/Info.plist locks the app to landscape. Kivy's content rotation
+        # must match that orientation as well; otherwise Window.width/height can
+        # remain in portrait order while the physical iPhone is landscape,
+        # placing the 16:9 stage against the left side of the display.
+        def sync_landscape(_dt):
+            try:
+                if Window.width < Window.height:
+                    Window.rotation = 90
+            except Exception:
+                pass
+
+        Clock.schedule_once(sync_landscape, 0)
+        Clock.schedule_once(sync_landscape, .15)
+
+        Window.bind(on_rotate=lambda _window, _rotation: Clock.schedule_once(sync_landscape, 0))
 
         sm = ScreenManager(transition=NoTransition())
         sm.add_widget(Boot(name='boot'))
