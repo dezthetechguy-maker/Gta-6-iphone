@@ -54,6 +54,26 @@ if [ -z "$PROJECT_FILE" ]; then
     exit 1
 fi
 
+# Kivy's generated Xcode project needs to advertise the same landscape-only
+# orientation as the runtime UI.  Patch the generated application Info.plist
+# instead of relying on a desktop Window.size, which has no useful meaning on
+# an actual iPhone.
+PLIST_FILE="$(find "$PROJECT_DIR" -type f -name 'Info.plist' -print -quit)"
+if [ -z "$PLIST_FILE" ]; then
+    echo "ERROR: Generated Xcode project does not contain Info.plist." >&2
+    find "$PROJECT_DIR" -maxdepth 5 -type f -name '*.plist' -print >&2 || true
+    exit 1
+fi
+
+/usr/libexec/PlistBuddy -c 'Delete :UISupportedInterfaceOrientations' "$PLIST_FILE" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c 'Add :UISupportedInterfaceOrientations array' "$PLIST_FILE"
+/usr/libexec/PlistBuddy -c 'Add :UISupportedInterfaceOrientations: string UIInterfaceOrientationLandscapeLeft' "$PLIST_FILE"
+/usr/libexec/PlistBuddy -c 'Add :UISupportedInterfaceOrientations: string UIInterfaceOrientationLandscapeRight' "$PLIST_FILE"
+/usr/libexec/PlistBuddy -c 'Delete :UIRequiresFullScreen' "$PLIST_FILE" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c 'Add :UIRequiresFullScreen bool true' "$PLIST_FILE"
+
+echo "Configured landscape-only iOS orientation in: $PLIST_FILE"
+
 # Export paths for the GitHub Actions job.
 echo "KIVY_IOS_PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 echo "KIVY_IOS_PROJECT_FILE=$PROJECT_FILE" >> "$GITHUB_ENV"
