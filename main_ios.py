@@ -46,12 +46,11 @@ def make_label(text, size, color=WHITE, bold=False, **kwargs):
 
 
 class FixedStage(FloatLayout):
-    """Render all presentation content on a centered 16:9 stage."""
-    RATIO = 16 / 9
+    """Fill the entire live iOS viewport; do not letterbox or pillarbox."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.stage = FloatLayout(size_hint=(None, None))
+        self.stage = FloatLayout(size_hint=(1, 1))
         self.add_widget(self.stage)
         with self.canvas.before:
             Color(*BLACK)
@@ -63,19 +62,8 @@ class FixedStage(FloatLayout):
     def _layout(self, *_):
         self.bg.pos = self.pos
         self.bg.size = self.size
-        w, h = self.size
-        if w <= 0 or h <= 0:
-            return
-
-        if w / h >= self.RATIO:
-            sh = h
-            sw = h * self.RATIO
-        else:
-            sw = w
-            sh = w / self.RATIO
-
-        self.stage.size = (sw, sh)
-        self.stage.center = self.center
+        self.stage.pos = self.pos
+        self.stage.size = self.size
 
 
 class FittedImage(Image):
@@ -86,7 +74,8 @@ class FittedImage(Image):
 
 
 class CleanVideo(FloatLayout):
-    """Centered 16:9 video. Story has a hidden double-tap exit gesture."""
+    """Full-screen video that stretches to the complete landscape viewport."""
+
     def __init__(self, path, on_finished=None, double_tap_exit=False, **kwargs):
         super().__init__(**kwargs)
         self.path = Path(path)
@@ -102,11 +91,19 @@ class CleanVideo(FloatLayout):
             self.bg = Rectangle(pos=self.pos, size=self.size)
         self.bind(pos=self._layout, size=self._layout)
 
-        self.stage = FloatLayout(size_hint=(None, None))
+        # The video stage fills the real iOS viewport. fit_mode='fill' deliberately
+        # stretches the source so there are no side bars or top/bottom bars.
+        self.stage = FloatLayout(size_hint=(1, 1))
         self.add_widget(self.stage)
         self.video = Video(
-            source=str(self.path), state='stop', options={'eos': 'stop'}, volume=1.0,
-            fit_mode='contain', size_hint=(1, 1), opacity=0,
+            source=str(self.path),
+            state='stop',
+            options={'eos': 'stop'},
+            volume=1.0,
+            fit_mode='fill',
+            size_hint=(1, 1),
+            pos_hint={'x': 0, 'y': 0},
+            opacity=0,
         )
         self.stage.add_widget(self.video)
         self.video.bind(on_eos=self._eos)
@@ -117,18 +114,8 @@ class CleanVideo(FloatLayout):
     def _layout(self, *_):
         self.bg.pos = self.pos
         self.bg.size = self.size
-        w, h = self.size
-        if w <= 0 or h <= 0:
-            return
-        ratio = 16 / 9
-        if w / h >= ratio:
-            sh = h
-            sw = h * ratio
-        else:
-            sw = w
-            sh = w / ratio
-        self.stage.size = (sw, sh)
-        self.stage.center = self.center
+        self.stage.pos = self.pos
+        self.stage.size = self.size
 
     def _texture_ready(self, *_):
         if self.video.texture:
@@ -213,7 +200,7 @@ class Boot(Screen):
         self.clear_widgets()
         root = FixedStage()
         self.add_widget(root)
-        box = BoxLayout(orientation='vertical', padding=28, spacing=8)
+        box = BoxLayout(orientation='vertical', padding=28, spacing=8, size_hint=(1, 1))
         box.add_widget(make_label('VICE CITY DEVELOPMENT ENVIRONMENT', 16, GREEN, True,
                                   size_hint_y=None, height=38))
         out = BoxLayout(orientation='vertical', size_hint_y=None, spacing=2)
@@ -275,7 +262,8 @@ class Loading(Screen):
 
 
 class MenuCard(ButtonBehavior, FloatLayout):
-    """Uniform iOS menu card."""
+    """Uniform full-screen menu card."""
+
     def __init__(self, key, title, desc, image_path=None, background_path=None,
                  active=False, on_activate=None, **kwargs):
         super().__init__(**kwargs)
@@ -348,17 +336,17 @@ class Menu(Screen):
                 Color(*BLACK)
                 Rectangle(pos=root.stage.pos, size=root.stage.size)
 
-        content = FloatLayout(size_hint=(1, 1))
+        content = FloatLayout(size_hint=(1, 1), pos=(0, 0))
         root.stage.add_widget(content)
 
         content.add_widget(make_label(
             'V I C E   C I T Y', 38, WHITE, True,
-            size_hint=(1, .10), pos_hint={'x': 0, 'top': .965}
+            size_hint=(1, .10), pos_hint={'center_x': .5, 'top': .965}
         ))
         content.add_widget(make_label(
             'INTERNAL ALPHA ENVIRONMENT   //   BUILD 0.6.13   //   REVISION 4217',
             9.2, (1, .72, .84, 1), False,
-            size_hint=(1, .045), pos_hint={'x': 0, 'top': .885}
+            size_hint=(1, .045), pos_hint={'center_x': .5, 'top': .885}
         ))
         content.add_widget(make_label(
             'ONLINE  /  DEV BUILD', 9.2, CYAN, True,
@@ -392,16 +380,16 @@ class Menu(Screen):
 
         content.add_widget(make_label(
             'SELECT A TAB   •   TAP TO OPEN', 9.2, WHITE, True,
-            size_hint=(1, .045), pos_hint={'x': 0, 'y': .175}
+            size_hint=(1, .045), pos_hint={'center_x': .5, 'y': .175}
         ))
         content.add_widget(make_label(
-            'TOUCH-FIRST iOS BUILD  •  16:9 PRESENTATION', 8.1, MUTED,
-            size_hint=(1, .035), pos_hint={'x': 0, 'y': .105}
+            'TOUCH-FIRST iOS BUILD  •  FULL-SCREEN LANDSCAPE', 8.1, MUTED,
+            size_hint=(1, .035), pos_hint={'center_x': .5, 'y': .105}
         ))
         content.add_widget(make_label(
             'STORY MODE IS THE ONLY ACTIVE TAB IN THIS BUILD', 8,
             (1, .70, .80, 1),
-            size_hint=(1, .03), pos_hint={'x': 0, 'y': .05}
+            size_hint=(1, .03), pos_hint={'center_x': .5, 'y': .05}
         ))
 
     def activate(self, key):
@@ -428,10 +416,6 @@ class GTA6iOS(App):
     def build(self):
         Window.clearcolor = (0, 0, 0, 1)
 
-        # UIKit/Info.plist locks the app to landscape. Kivy's content rotation
-        # must match that orientation as well; otherwise Window.width/height can
-        # remain in portrait order while the physical iPhone is landscape,
-        # placing the 16:9 stage against the left side of the display.
         def sync_landscape(_dt):
             try:
                 if Window.width < Window.height:
@@ -441,7 +425,6 @@ class GTA6iOS(App):
 
         Clock.schedule_once(sync_landscape, 0)
         Clock.schedule_once(sync_landscape, .15)
-
         Window.bind(on_rotate=lambda _window, _rotation: Clock.schedule_once(sync_landscape, 0))
 
         sm = ScreenManager(transition=NoTransition())
