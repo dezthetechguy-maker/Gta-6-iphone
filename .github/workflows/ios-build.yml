@@ -116,27 +116,59 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee "$RUNNER_TEMP/xcode-build.log"
 
-      - name: Verify built app bundle
+      - name: Verify App Bundle
         shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="$(find "$RUNNER_TEMP/gta6-xcode-build" -type d -name '*.app' -print -quit)"
+
+          APP_ROOT="$RUNNER_TEMP/gta6-xcode-build"
+
+          APP_PATH="$(find "$APP_ROOT" -type d -name '*.app' -print -quit)"
+
           if [ -z "$APP_PATH" ]; then
-            echo 'ERROR: Xcode completed without producing an .app bundle.'
-            find "$RUNNER_TEMP/gta6-xcode-build" -maxdepth 4 -print || true
+            echo "ERROR: Xcode completed without producing an .app bundle."
+            find "$APP_ROOT" -maxdepth 6 -print || true
             exit 1
           fi
 
-          test -f "$APP_PATH/Info.plist"
-          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")"
-          test -n "$EXECUTABLE"
-          test -f "$APP_PATH/$EXECUTABLE"
-          test -f "$APP_PATH/main.pyc"
+          PLIST="$APP_PATH/Info.plist"
+
+          if [ ! -f "$PLIST" ]; then
+            echo "ERROR: Info.plist is missing: $PLIST"
+            exit 1
+          fi
+
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST" 2>/dev/null || true)"
+
+          if [ -z "$EXECUTABLE" ]; then
+            echo "ERROR: CFBundleExecutable is missing."
+            exit 1
+          fi
+
+          EXECUTABLE_PATH="$APP_PATH/$EXECUTABLE"
+
+          if [ ! -f "$EXECUTABLE_PATH" ]; then
+            echo "ERROR: App executable is missing: $EXECUTABLE_PATH"
+            find "$APP_PATH" -maxdepth 4 -print
+            exit 1
+          fi
+
+          MAIN_PYC="$(find "$APP_PATH" -type f -name 'main.pyc' -print -quit || true)"
+
+          if [ -z "$MAIN_PYC" ]; then
+            echo "ERROR: main.pyc was not found inside the app bundle."
+            find "$APP_PATH" \( -name '*.pyc' -o -name '*.py' -o -name '*.zip' \) -print || true
+            exit 1
+          fi
 
           echo "Built app: $APP_PATH"
           echo "Executable: $EXECUTABLE"
+          echo "Python entry point: $MAIN_PYC"
+
           du -sh "$APP_PATH"
+
           echo "KIVY_IOS_APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+    
 
       - name: Package unsigned IPA
         shell: bash
